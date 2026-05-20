@@ -134,23 +134,25 @@ def _renderizar_jogo_form(
         str(palpite_existente["placar_b"]) if palpite_existente else ""
     )
 
-    # Layout em colunas: data | time A | placar A | x | placar B | time B
-    # Usamos flexbox com altura fixa (~38px, altura padrão do input) para
-    # centralizar verticalmente em relação aos campos de texto.
-    _ESTILO_LINHA = (
-        "display:flex; align-items:center; height:38px;"
+    # Data (linha discreta acima do confronto)
+    st.markdown(
+        f"<div style='font-size:0.8rem; opacity:0.7; margin-bottom:4px;'>"
+        f"📅 {data_fmt}</div>",
+        unsafe_allow_html=True,
     )
-    cols = st.columns([1.4, 2, 0.8, 0.3, 0.8, 2])
+
+    # Confronto: [time A + bandeira] [input A] [×] [input B] [bandeira + time B]
+    # Proporções pensadas para caber lado a lado mesmo em telas estreitas.
+    # Inputs ocupam pouco espaço; nomes ocupam o resto.
+    cols = st.columns([5, 2, 1, 2, 5], vertical_alignment="center")
+
     cols[0].markdown(
-        f"<div style='{_ESTILO_LINHA}'>📅 {data_fmt}</div>",
+        f"<div style='display:flex; align-items:center; justify-content:flex-end; "
+        f"gap:5px; text-align:right; line-height:1.1;'>"
+        f"<b>{time_a}</b>{bandeira_a}</div>",
         unsafe_allow_html=True,
     )
-    cols[1].markdown(
-        f"<div style='{_ESTILO_LINHA} justify-content:flex-end; gap:6px;'>"
-        f"{bandeira_a}<b>{time_a}</b></div>",
-        unsafe_allow_html=True,
-    )
-    pa_str = cols[2].text_input(
+    pa_str = cols[1].text_input(
         "A",
         value=pa_default,
         max_chars=2,
@@ -159,11 +161,11 @@ def _renderizar_jogo_form(
         disabled=not pode_editar,
         placeholder="–",
     )
-    cols[3].markdown(
-        f"<div style='{_ESTILO_LINHA} justify-content:center;'>×</div>",
+    cols[2].markdown(
+        "<div style='text-align:center; font-weight:bold;'>×</div>",
         unsafe_allow_html=True,
     )
-    pb_str = cols[4].text_input(
+    pb_str = cols[3].text_input(
         "B",
         value=pb_default,
         max_chars=2,
@@ -172,8 +174,9 @@ def _renderizar_jogo_form(
         disabled=not pode_editar,
         placeholder="–",
     )
-    cols[5].markdown(
-        f"<div style='{_ESTILO_LINHA} gap:6px;'>"
+    cols[4].markdown(
+        f"<div style='display:flex; align-items:center; gap:5px; "
+        f"line-height:1.1;'>"
         f"{bandeira_b}<b>{time_b}</b></div>",
         unsafe_allow_html=True,
     )
@@ -251,6 +254,31 @@ def render() -> None:
     usuario = auth.usuario_logado()
     st.title("⚽ Palpites · Fase de Grupos")
     st.caption(f"Logado como **{usuario['nome']}**")
+
+    # CSS para manter a linha do jogo horizontal mesmo no celular.
+    # Por padrão o Streamlit empilha colunas abaixo de 640px (flex-wrap:
+    # wrap). Forçamos nowrap nos blocos horizontais para os confrontos
+    # ficarem lado a lado, e deixamos os inputs de placar compactos.
+    st.markdown(
+        """
+        <style>
+        /* Impede o empilhamento vertical das colunas em telas pequenas */
+        div[data-testid="stHorizontalBlock"] {
+            flex-wrap: nowrap !important;
+            gap: 0.3rem !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+            min-width: 0 !important;
+        }
+        /* Inputs de placar centralizados e compactos */
+        div[data-testid="stTextInput"] input {
+            text-align: center;
+            padding: 0.25rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.info(
         "💡 **Dicas:**  \n"
