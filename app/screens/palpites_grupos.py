@@ -131,55 +131,44 @@ def _renderizar_jogo_form(
     bandeira_b = _bandeira_img(time_b)
     data_fmt = utils.formatar_data(_parse_data(partida["data_jogo"]))
 
-    # Defaults: se existe palpite, traz o valor; senão, deixa em branco.
-    pa_default = (
-        str(palpite_existente["placar_a"]) if palpite_existente else ""
-    )
-    pb_default = (
-        str(palpite_existente["placar_b"]) if palpite_existente else ""
+    # Default: se existe palpite, mostra no formato "AxB"; senão, vazio.
+    if palpite_existente:
+        valor_default = formatar_placar(
+            palpite_existente["placar_a"], palpite_existente["placar_b"]
+        )
+    else:
+        valor_default = ""
+
+    # Data (linha discreta acima do confronto)
+    st.markdown(
+        f"<div style='font-size:0.8rem; opacity:0.7; margin-bottom:2px;'>"
+        f"📅 {data_fmt}</div>",
+        unsafe_allow_html=True,
     )
 
-    # Layout em colunas: data | time A | placar A | x | placar B | time B
-    # Usamos flexbox com altura fixa (~38px, altura padrão do input) para
-    # centralizar verticalmente em relação aos campos de texto.
-    _ESTILO_LINHA = (
-        "display:flex; align-items:center; height:38px;"
-    )
-    cols = st.columns([1.4, 2, 0.8, 0.3, 0.8, 2])
-    cols[0].markdown(
-        f"<div style='{_ESTILO_LINHA}'>📅 {data_fmt}</div>",
+    # Layout: [time A 🏳] [ input 2x1 ] [🏳 time B]
+    # Apenas 3 colunas, e o input do meio é estreito. Empilha bem no mobile.
+    col_a, col_input, col_b = st.columns([4, 2, 4], vertical_alignment="center")
+
+    col_a.markdown(
+        f"<div style='display:flex; align-items:center; justify-content:flex-end; "
+        f"gap:5px; text-align:right; line-height:1.15; font-weight:600;'>"
+        f"{time_a}{bandeira_a}</div>",
         unsafe_allow_html=True,
     )
-    cols[1].markdown(
-        f"<div style='{_ESTILO_LINHA} justify-content:flex-end; gap:6px;'>"
-        f"{bandeira_a}<b>{time_a}</b></div>",
-        unsafe_allow_html=True,
-    )
-    pa_str = cols[2].text_input(
-        "A",
-        value=pa_default,
-        max_chars=2,
-        key=f"pa_{partida['id']}",
+    placar_str = col_input.text_input(
+        "Placar",
+        value=valor_default,
+        max_chars=5,
+        key=f"placar_{partida['id']}",
         label_visibility="collapsed",
         disabled=not pode_editar,
         placeholder="2x1",
     )
-    cols[3].markdown(
-        f"<div style='{_ESTILO_LINHA} justify-content:center;'>×</div>",
-        unsafe_allow_html=True,
-    )
-    pb_str = cols[4].text_input(
-        "B",
-        value=pb_default,
-        max_chars=2,
-        key=f"pb_{partida['id']}",
-        label_visibility="collapsed",
-        disabled=not pode_editar,
-        placeholder="–",
-    )
-    cols[5].markdown(
-        f"<div style='{_ESTILO_LINHA} gap:6px;'>"
-        f"{bandeira_b}<b>{time_b}</b></div>",
+    col_b.markdown(
+        f"<div style='display:flex; align-items:center; gap:5px; "
+        f"line-height:1.15; font-weight:600;'>"
+        f"{bandeira_b}{time_b}</div>",
         unsafe_allow_html=True,
     )
 
@@ -246,6 +235,21 @@ def render() -> None:
     usuario = auth.usuario_logado()
     st.title("⚽ Palpites · Fase de Grupos")
     st.caption(f"Logado como **{usuario['nome']}**")
+
+    # CSS leve: apenas deixa os inputs de placar centralizados e mais
+    # estreitos. NÃO mexemos no comportamento de empilhamento das colunas
+    # (forçar nowrap causava overflow horizontal no celular).
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stTextInput"] input {
+            text-align: center;
+            font-weight: 600;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.info(
         "💡 **Dicas:**  \n"
