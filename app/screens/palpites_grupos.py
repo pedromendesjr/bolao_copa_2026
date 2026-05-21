@@ -61,7 +61,7 @@ def _bandeira_img(time: str, altura_px: int = 18) -> str:
     url = f"https://flagcdn.com/{codigo}.svg"
     return (
         f'<img src="{url}" alt="{time}" '
-        f'style="height:{altura_px}px; border-radius:2px;">'
+        f'style="height:{altura_px}px; border-radius:2px; flex-shrink:0;">'
     )
 
 
@@ -139,44 +139,44 @@ def _renderizar_jogo_form(
     else:
         valor_default = ""
 
-    # Data (linha discreta acima do confronto)
+    # Confronto numa linha HTML única (não usa st.columns, então não
+    # empilha no celular): Time A 🏳  ×  🏳 Time B, com a data ao lado.
     st.markdown(
-        f"<div style='font-size:0.8rem; opacity:0.7; margin-bottom:2px;'>"
-        f"📅 {data_fmt}</div>",
+        f"""
+        <div style='display:flex; align-items:center; justify-content:center;
+                    gap:8px; flex-wrap:nowrap; margin-bottom:4px;'>
+            <span style='flex:1; text-align:right; font-weight:600;
+                         line-height:1.2;'>{time_a}</span>
+            {bandeira_a}
+            <span style='opacity:0.6; font-weight:bold;'>×</span>
+            {bandeira_b}
+            <span style='flex:1; text-align:left; font-weight:600;
+                         line-height:1.2;'>{time_b}</span>
+        </div>
+        <div style='text-align:center; font-size:0.75rem; opacity:0.6;
+                    margin-bottom:2px;'>📅 {data_fmt}</div>
+        """,
         unsafe_allow_html=True,
     )
 
-    # Layout: [time A 🏳] [ input 2x1 ] [🏳 time B]
-    # Apenas 3 colunas, e o input do meio é estreito. Empilha bem no mobile.
-    col_a, col_input, col_b = st.columns([4, 2, 4], vertical_alignment="center")
-
-    col_a.markdown(
-        f"<div style='display:flex; align-items:center; justify-content:flex-end; "
-        f"gap:5px; text-align:right; line-height:1.15; font-weight:600;'>"
-        f"{time_a}{bandeira_a}</div>",
-        unsafe_allow_html=True,
-    )
-    placar_str = col_input.text_input(
+    # Campo de palpite: estreito e centralizado, usando colunas só para
+    # limitar a largura (a do meio é o input). Como há 1 input por jogo,
+    # mesmo empilhando no mobile fica organizado.
+    _, col_meio, _ = st.columns([1, 1, 1])
+    placar_str = col_meio.text_input(
         "Placar",
         value=valor_default,
         max_chars=5,
         key=f"placar_{partida['id']}",
         label_visibility="collapsed",
         disabled=not pode_editar,
-        placeholder="2x1",
-    )
-    col_b.markdown(
-        f"<div style='display:flex; align-items:center; gap:5px; "
-        f"line-height:1.15; font-weight:600;'>"
-        f"{bandeira_b}{time_b}</div>",
-        unsafe_allow_html=True,
+        placeholder="ex: 2x1",
     )
 
     resultado = parse_placar(placar_str)
     if resultado is None:
-        # Distingue "vazio" (ok, sem palpite) de "preenchido errado" (avisa)
         if placar_str and placar_str.strip():
-            col_input.caption("⚠ formato inválido")
+            col_meio.caption("⚠ formato inválido")
         return (None, None)
     return resultado
 
