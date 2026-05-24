@@ -11,7 +11,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-from app.utils import ler_segredo
+from app.utils import bolao_id, ler_segredo
 
 
 # Carrega variáveis do .env uma única vez quando o módulo é importado
@@ -45,13 +45,16 @@ def get_client() -> Client:
 # -------------------------------------------------------------------
 # Usuários
 # -------------------------------------------------------------------
+# Todas as operações de usuário são escopadas pelo bolão atual
+# (utils.bolao_id()), lido dos secrets/.env do deploy.
 
 def buscar_usuario(telefone: str) -> Optional[dict]:
-    """Retorna o usuário (dict) ou None se não existir."""
+    """Retorna o usuário (dict) do bolão atual, ou None se não existir."""
     result = (
         get_client()
         .table("usuarios")
         .select("*")
+        .eq("bolao_id", bolao_id())
         .eq("telefone", telefone)
         .execute()
     )
@@ -59,28 +62,34 @@ def buscar_usuario(telefone: str) -> Optional[dict]:
 
 
 def criar_usuario(telefone: str, nome: str, senha: str) -> dict:
-    """Cria um novo usuário e retorna o registro inserido."""
+    """Cria um novo usuário no bolão atual e retorna o registro."""
     result = (
         get_client()
         .table("usuarios")
-        .insert({"telefone": telefone, "nome": nome, "senha": senha})
+        .insert({
+            "bolao_id": bolao_id(),
+            "telefone": telefone,
+            "nome": nome,
+            "senha": senha,
+        })
         .execute()
     )
     return result.data[0]
 
 
 def validar_senha(telefone: str, senha: str) -> bool:
-    """Confere se o telefone existe e a senha bate."""
+    """Confere se o telefone existe no bolão atual e a senha bate."""
     usuario = buscar_usuario(telefone)
     return usuario is not None and usuario.get("senha") == senha
 
 
 def resetar_senha(telefone: str, nova_senha: str) -> dict:
-    """Atualiza a senha de um usuário (usado pela tela admin)."""
+    """Atualiza a senha de um usuário do bolão atual (tela admin)."""
     result = (
         get_client()
         .table("usuarios")
         .update({"senha": nova_senha})
+        .eq("bolao_id", bolao_id())
         .eq("telefone", telefone)
         .execute()
     )
@@ -88,8 +97,15 @@ def resetar_senha(telefone: str, nova_senha: str) -> dict:
 
 
 def listar_usuarios() -> list[dict]:
-    """Lista todos os usuários cadastrados."""
-    return get_client().table("usuarios").select("*").execute().data
+    """Lista todos os usuários do bolão atual."""
+    return (
+        get_client()
+        .table("usuarios")
+        .select("*")
+        .eq("bolao_id", bolao_id())
+        .execute()
+        .data
+    )
 
 
 # -------------------------------------------------------------------
@@ -154,13 +170,15 @@ def atualizar_resultado(
 # -------------------------------------------------------------------
 # Palpites
 # -------------------------------------------------------------------
+# Todas as operações são escopadas pelo bolão atual (utils.bolao_id()).
 
 def buscar_palpites_usuario(telefone: str) -> list[dict]:
-    """Lista todos os palpites de um usuário."""
+    """Lista todos os palpites de um usuário no bolão atual."""
     result = (
         get_client()
         .table("palpites")
         .select("*")
+        .eq("bolao_id", bolao_id())
         .eq("telefone", telefone)
         .execute()
     )
@@ -168,11 +186,12 @@ def buscar_palpites_usuario(telefone: str) -> list[dict]:
 
 
 def buscar_palpites_partida(partida_id: int) -> list[dict]:
-    """Lista todos os palpites de uma partida (uso administrativo/ranking)."""
+    """Lista palpites de uma partida no bolão atual (admin/ranking)."""
     result = (
         get_client()
         .table("palpites")
         .select("*")
+        .eq("bolao_id", bolao_id())
         .eq("partida_id", partida_id)
         .execute()
     )
@@ -186,8 +205,9 @@ def salvar_palpite(
     placar_b: int,
     avanca: Optional[str] = None,
 ) -> dict:
-    """Insere ou atualiza um palpite (upsert pela PK composta)."""
+    """Insere ou atualiza um palpite no bolão atual (upsert pela PK composta)."""
     payload = {
+        "bolao_id": bolao_id(),
         "telefone": telefone,
         "partida_id": partida_id,
         "placar_a": placar_a,
@@ -197,12 +217,20 @@ def salvar_palpite(
     result = (
         get_client()
         .table("palpites")
-        .upsert(payload, on_conflict="telefone,partida_id")
+        .upsert(payload, on_conflict="bolao_id,telefone,partida_id")
         .execute()
     )
     return result.data[0]
 
 
 def todos_palpites() -> list[dict]:
-    """Retorna todos os palpites de todos os usuários (uso pelo ranking)."""
-    return get_client().table("palpites").select("*").execute().data
+    """Retorna todos os palpites do bolão atual (uso pelo ranking)."""
+    return (
+        get_client()
+        .table("palpites")
+        .select("*")
+        .eq("bolao_id", bolao_id())
+        .execute()
+        .data
+    )
+    

@@ -29,7 +29,7 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 
-from app import auth
+from app import auth, utils
 from app.screens import (
     admin,
     classificacao,
@@ -82,6 +82,7 @@ else:
     with st.sidebar:
         st.markdown(f"### 👤 {usuario['nome']}")
         st.caption(f"📱 {usuario['telefone']}")
+        st.caption(f"🎯 Bolão: **{utils.bolao_id()}**")
         st.divider()
 
         pagina_escolhida = st.radio(

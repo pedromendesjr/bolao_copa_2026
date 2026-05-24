@@ -74,3 +74,12 @@ def admin_pin() -> str | None:
     """Retorna o PIN do admin, ou None se não configurado."""
     pin = (ler_segredo("ADMIN_PIN") or "").strip()
     return pin if pin else None
+
+
+def bolao_id() -> str:
+    """
+    Retorna o identificador do bolão atual (ex: 'lavaprato', 'cartola').
+    Lido de BOLAO_ID nos secrets/.env. Default 'lavaprato' para
+    compatibilidade com o primeiro bolão.
+    """
+    return (ler_segredo("BOLAO_ID") or "lavaprato").strip()

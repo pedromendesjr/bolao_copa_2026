@@ -29,10 +29,12 @@ CREATE TYPE status_partida AS ENUM (
 -- Tabela: usuarios ---------------------------------------------------
 DROP TABLE IF EXISTS usuarios CASCADE;
 CREATE TABLE usuarios (
-    telefone      TEXT PRIMARY KEY,             -- 11 dígitos: DD9XXXXXXXX
+    bolao_id      TEXT NOT NULL,                -- ex: 'lavaprato', 'cartola'
+    telefone      TEXT NOT NULL,                -- 11 dígitos: DD9XXXXXXXX
     nome          TEXT NOT NULL,
     senha         TEXT NOT NULL,                -- 4 dígitos numéricos
     criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (bolao_id, telefone),
     CONSTRAINT senha_quatro_digitos CHECK (senha ~ '^[0-9]{4}$'),
     CONSTRAINT telefone_onze_digitos CHECK (telefone ~ '^[0-9]{11}$')
 );
@@ -69,17 +71,22 @@ CREATE INDEX idx_partidas_grupo ON partidas(grupo);
 -- Tabela: palpites ---------------------------------------------------
 DROP TABLE IF EXISTS palpites CASCADE;
 CREATE TABLE palpites (
-    telefone        TEXT NOT NULL REFERENCES usuarios(telefone) ON DELETE CASCADE,
+    bolao_id        TEXT NOT NULL,
+    telefone        TEXT NOT NULL,
     partida_id      INTEGER NOT NULL REFERENCES partidas(id) ON DELETE CASCADE,
     placar_a        INTEGER NOT NULL CHECK (placar_a >= 0),
     placar_b        INTEGER NOT NULL CHECK (placar_b >= 0),
     avanca          CHAR(1) CHECK (avanca IS NULL OR avanca IN ('A', 'B')),
     criado_em       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (telefone, partida_id)
+    PRIMARY KEY (bolao_id, telefone, partida_id),
+    FOREIGN KEY (bolao_id, telefone)
+        REFERENCES usuarios (bolao_id, telefone) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_palpites_partida ON palpites(partida_id);
+CREATE INDEX idx_palpites_bolao   ON palpites(bolao_id);
+CREATE INDEX idx_usuarios_bolao   ON usuarios(bolao_id);
 
 -- Trigger para manter atualizado_em sempre correto -------------------
 CREATE OR REPLACE FUNCTION trg_palpites_atualizado_em()
