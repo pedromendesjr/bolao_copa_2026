@@ -62,7 +62,7 @@ def render() -> None:
         for l in linhas
     ])
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True, height=563)
 
     # Posição do usuário em destaque (caso ele não veja logo)
     minha_linha = next((l for l in linhas if l.telefone == usuario["telefone"]), None)
