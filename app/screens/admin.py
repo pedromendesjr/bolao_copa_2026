@@ -6,19 +6,21 @@ Tela administrativa (protegida por PIN).
 Funcionalidades:
     - Lançar/editar resultado oficial de partidas (fase de grupos e mata-mata)
     - Definir quem avançou (mata-mata)
-    - Resetar a senha de um usuário (quando esquecem o PIN de 4 dígitos)
-
-O acesso exige:
-    1. estar logado com o telefone configurado em ADMIN_TELEFONE
-       (o item de menu já só aparece para esse usuário), E
-    2. digitar o ADMIN_PIN configurado nos secrets / .env.
+    - Resetar a senha de um usuário
+    - Gerar relatório de palpites do dia para copiar/colar no WhatsApp
 """
 from __future__ import annotations
+
+from datetime import date
 
 import streamlit as st
 
 from app import auth, db, utils
 from app.placar_parser import formatar_placar, parse_placar
+from app.relatorio_palpites import (
+    datas_com_partidas,
+    gerar_relatorio_dia,
+)
 
 
 def render() -> None:
@@ -26,7 +28,6 @@ def render() -> None:
 
     pin_configurado = utils.admin_pin()
 
-    # Diagnóstico: ajuda a entender por que o PIN pode estar "incorreto".
     if pin_configurado is None:
         st.error(
             "⚠ Nenhum PIN administrativo está configurado. "
@@ -37,7 +38,6 @@ def render() -> None:
 
     pin_digitado = st.text_input("PIN administrativo", type="password")
 
-    # Compara após strip dos dois lados, evitando falha por espaços.
     if not pin_digitado:
         st.caption("Digite o PIN administrativo para acessar.")
         return
@@ -50,8 +50,8 @@ def render() -> None:
     usuario = auth.usuario_logado()
     st.success(f"Acesso liberado, {usuario['nome']}.")
 
-    aba_resultados, aba_senhas = st.tabs(
-        ["📋 Lançar resultados", "🔑 Resetar senha"]
+    aba_resultados, aba_senhas, aba_palpites = st.tabs(
+        ["📋 Lançar resultados", "🔑 Resetar senha", "📱 Palpites do dia"]
     )
 
     with aba_resultados:
@@ -59,6 +59,9 @@ def render() -> None:
 
     with aba_senhas:
         _aba_resetar_senha()
+
+    with aba_palpites:
+        _aba_palpites_do_dia()
 
 
 # -------------------------------------------------------------------
@@ -74,8 +77,6 @@ def _aba_resultados() -> None:
         st.error(f"Erro ao buscar partidas: {exc}")
         return
 
-    # Considera apenas partidas com times definidos (mata-mata pode estar
-    # com placeholders ainda não preenchidos).
     partidas_validas = [
         p for p in partidas if p.get("time_a") and p.get("time_b")
     ]
@@ -84,7 +85,6 @@ def _aba_resultados() -> None:
         st.info("Nenhuma partida com times definidos ainda.")
         return
 
-    # Monta rótulos legíveis para o seletor
     def _rotulo(p: dict) -> str:
         status_icone = "✅" if p["status"] == "finalizado" else "⏳"
         placar = ""
@@ -104,7 +104,6 @@ def _aba_resultados() -> None:
 
     eh_mata_mata = partida["fase"] != "grupos"
 
-    # Valor atual do placar (se já lançado)
     if partida["placar_a"] is not None and partida["placar_b"] is not None:
         valor_atual = formatar_placar(partida["placar_a"], partida["placar_b"])
     else:
@@ -243,3 +242,70 @@ def _aba_resetar_senha() -> None:
             )
         except Exception as exc:
             st.error(f"Erro ao redefinir: {exc}")
+
+
+# -------------------------------------------------------------------
+# Aba: palpites do dia (para WhatsApp)
+# -------------------------------------------------------------------
+
+def _aba_palpites_do_dia() -> None:
+    st.subheader("Relatório de palpites do dia")
+    st.caption(
+        "Escolha uma data com jogos. O texto gerado pode ser copiado "
+        "e colado no WhatsApp do grupo."
+    )
+
+    try:
+        partidas = db.listar_partidas()
+        usuarios = db.listar_usuarios()
+        palpites = db.todos_palpites()
+    except Exception as exc:
+        st.error(f"Erro ao buscar dados: {exc}")
+        return
+
+    if not usuarios:
+        st.info("Nenhum participante cadastrado ainda.")
+        return
+
+    datas = datas_com_partidas(partidas)
+    if not datas:
+        st.info("Nenhuma partida com times definidos.")
+        return
+
+    # Tenta pré-selecionar a data de hoje se houver jogos; senão, a primeira.
+    hoje = date.today()
+    index_default = 0
+    if hoje in datas:
+        index_default = datas.index(hoje)
+
+    data_escolhida = st.selectbox(
+        "Data",
+        options=datas,
+        index=index_default,
+        format_func=lambda d: d.strftime("%d/%m/%Y (%a)"),
+    )
+
+    # Filtra partidas e palpites pela data escolhida.
+    partidas_dia = [
+        p for p in partidas
+        if str(p["data_jogo"]) == data_escolhida.isoformat()
+    ]
+    ids_dia = {p["id"] for p in partidas_dia}
+    palpites_dia = [p for p in palpites if p["partida_id"] in ids_dia]
+
+    texto = gerar_relatorio_dia(
+        data_jogo=data_escolhida,
+        partidas=partidas_dia,
+        palpites=palpites_dia,
+        usuarios=usuarios,
+    )
+
+    # Calcula altura aproximada (linhas + folga).
+    n_linhas = texto.count("\n") + 1
+    altura = max(200, min(600, n_linhas * 22))
+
+    st.text_area(
+        "Texto pronto para copiar (use o ícone 📋 no canto superior direito)",
+        value=texto,
+        height=altura,
+    )
