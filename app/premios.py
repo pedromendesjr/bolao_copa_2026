@@ -32,6 +32,12 @@ PREMIOS: list[Premio] = [
         descricao="Qual seleção vai levar a Copa?",
     ),
     Premio(
+        tipo="craque",
+        titulo="Craque da Copa",
+        emoji="⭐",
+        descricao="Melhor jogador da competição (Bola de Ouro).",
+    ),
+    Premio(
         tipo="artilheiro",
         titulo="Artilheiro",
         emoji="⚽",

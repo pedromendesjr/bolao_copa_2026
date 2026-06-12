@@ -19,8 +19,8 @@ TZ = ZoneInfo("America/Sao_Paulo")
 
 
 class TestConstantes:
-    def test_tem_cinco_premios(self):
-        assert len(PREMIOS) == 5
+    def test_tem_seis_premios(self):
+        assert len(PREMIOS) == 6
 
     def test_tipos_unicos(self):
         tipos = [p.tipo for p in PREMIOS]
@@ -29,7 +29,7 @@ class TestConstantes:
     def test_premios_esperados(self):
         tipos = {p.tipo for p in PREMIOS}
         assert tipos == {
-            "campeao", "artilheiro", "assistencia",
+            "campeao", "craque", "artilheiro", "assistencia",
             "luva_de_ouro", "jogador_jovem",
         }
 
