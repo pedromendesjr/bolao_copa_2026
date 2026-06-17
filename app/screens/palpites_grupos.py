@@ -25,7 +25,8 @@ import streamlit as st
 
 from app import auth, db, utils
 from app.placar_parser import formatar_placar, parse_placar
-from app.scoring import Palpite, Pontuacao, Resultado, calcular_pontuacao
+from app.scoring import Palpite, Pontuacao, Resultado
+from app.scoring_helpers import pontuar 
 
 
 GRUPOS_FASE = list("ABCDEFGHIJKL")
@@ -196,7 +197,7 @@ def _renderizar_jogo(
     if resultado is not None:
         _renderizar_jogo_form(partida, palpite_existente, pode_editar=False)
         if palpite_existente is not None:
-            pont = calcular_pontuacao(
+            pont = pontuar(
                 Palpite(
                     placar_a=palpite_existente["placar_a"],
                     placar_b=palpite_existente["placar_b"],

@@ -1,49 +1,43 @@
 """
 ranking.py
 ==========
-Cálculo do ranking agregado dos usuários, incluindo critérios de desempate.
+Cálculo do ranking de pontuação dos participantes do bolão.
 
-Critérios de desempate na ordem:
-    1. Maior número de PLACARES EXATOS (palpites com 18 pts)
-    2. Maior número de VENCEDORES acertados (qualquer pontuação > 0
-       em jogos onde o usuário acertou quem ganhou ou o empate)
-    3. Ordem ALFABÉTICA do nome
+Funções puras: recebem dados (usuários, partidas, palpites) e retornam
+o ranking ordenado. Sem I/O direto - mas usa `scoring_helpers.pontuar`
+para usar o regramento (padrão ou cartola) do bolão atual.
 
-Os palpites de partidas ainda não finalizadas são ignorados.
+Critérios de desempate (em ordem):
+    1. Maior número de placares exatos
+    2. Maior número de vencedores acertados
+    3. Ordem alfabética do nome
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app import scoring
+from app.scoring import Palpite, Resultado
+from app.scoring_helpers import pontuar
 
 
-@dataclass
+@dataclass(frozen=True)
 class LinhaRanking:
+    """Uma linha do ranking, pronta para exibição."""
     posicao: int
-    telefone: str
     nome: str
+    telefone: str
     pontos: int
     placares_exatos: int
     vencedores_acertados: int
-    jogos_palpitados: int  # número de partidas finalizadas em que palpitou
+    jogos_palpitados: int
 
 
-def _eh_placar_exato(p: scoring.Pontuacao) -> bool:
-    return p.pontos == 18
-
-
-def _acertou_vencedor(p: scoring.Pontuacao) -> bool:
-    """
-    'Vencedor' aqui significa: o palpite acertou o desfecho do jogo
-    (quem ganhou ou que foi empate). Qualquer pontuação ≥ 12 conta:
-    - 18: placar exato → acertou o desfecho
-    - 15: vencedor + 1 gol  → acertou o desfecho
-    - 12: só vencedor OU empate → acertou o desfecho
-    Pontuações 9, 3 e 0 não acertaram o desfecho (acertaram apenas
-    quem avançou ou gols isolados).
-    """
-    return p.pontos >= 12
+def _vencedor(a: int, b: int) -> str | None:
+    if a > b:
+        return "A"
+    if b > a:
+        return "B"
+    return None
 
 
 def calcular_ranking(
@@ -52,27 +46,20 @@ def calcular_ranking(
     palpites: list[dict],
 ) -> list[LinhaRanking]:
     """
-    Computa o ranking dos usuários a partir dos dados brutos do banco.
-
-    Args:
-        usuarios: lista de dicts {telefone, nome, ...}
-        partidas: lista de dicts {id, fase, status, placar_a, placar_b, avanca, ...}
-        palpites: lista de dicts {telefone, partida_id, placar_a, placar_b, avanca}
-
-    Returns:
-        Lista de LinhaRanking ordenada (posição 1 primeiro).
+    Calcula o ranking final, ordenado por:
+        1. pontos (desc)
+        2. placares exatos (desc)
+        3. vencedores acertados (desc)
+        4. nome (asc, case-insensitive)
     """
-    # Indexa partidas finalizadas por id
-    partidas_finalizadas: dict[int, dict] = {
-        p["id"]: p
-        for p in partidas
-        if p.get("status") == "finalizado" and p.get("placar_a") is not None
-    }
+    # Indexa partidas por id para lookup rápido
+    partidas_por_id = {p["id"]: p for p in partidas}
 
-    # Inicializa estatísticas zeradas para cada usuário
+    # Estatísticas por usuário (cobrindo todos os usuários)
     stats: dict[str, dict] = {
         u["telefone"]: {
             "nome": u["nome"],
+            "telefone": u["telefone"],
             "pontos": 0,
             "placares_exatos": 0,
             "vencedores_acertados": 0,
@@ -81,59 +68,66 @@ def calcular_ranking(
         for u in usuarios
     }
 
-    # Itera pelos palpites somando estatísticas
-    for palpite in palpites:
-        tel = palpite["telefone"]
+    for palp in palpites:
+        tel = palp["telefone"]
         if tel not in stats:
-            continue  # palpite órfão (usuário removido?), ignora
-        partida = partidas_finalizadas.get(palpite["partida_id"])
+            continue  # palpite órfão (usuário deletado): ignora
+
+        partida = partidas_por_id.get(palp["partida_id"])
         if partida is None:
-            continue  # jogo ainda não finalizado
+            continue
+        if partida["status"] != "finalizado":
+            continue
+        if partida["placar_a"] is None or partida["placar_b"] is None:
+            continue
 
-        pont = scoring.calcular_pontuacao(
-            palpite=scoring.Palpite(
-                placar_a=palpite["placar_a"],
-                placar_b=palpite["placar_b"],
-                avanca=palpite.get("avanca"),
-            ),
-            resultado=scoring.Resultado(
-                placar_a=partida["placar_a"],
-                placar_b=partida["placar_b"],
-                avanca=partida.get("avanca"),
-            ),
-            fase=partida["fase"],
-        )
-
-        stats[tel]["pontos"] += pont.pontos
         stats[tel]["jogos_palpitados"] += 1
-        if _eh_placar_exato(pont):
+
+        # Pontuação via helper (já escolhe regramento padrão/cartola)
+        resultado = Resultado(
+            placar_a=partida["placar_a"],
+            placar_b=partida["placar_b"],
+            avanca=partida.get("avanca"),
+        )
+        pal = Palpite(
+            placar_a=palp["placar_a"],
+            placar_b=palp["placar_b"],
+            avanca=palp.get("avanca"),
+        )
+        pont = pontuar(pal, resultado, fase=partida["fase"])
+        stats[tel]["pontos"] += pont.pontos
+
+        # Estatísticas para desempate
+        if (palp["placar_a"] == partida["placar_a"]
+                and palp["placar_b"] == partida["placar_b"]):
             stats[tel]["placares_exatos"] += 1
-        if _acertou_vencedor(pont):
+
+        vp = _vencedor(palp["placar_a"], palp["placar_b"])
+        vr = _vencedor(partida["placar_a"], partida["placar_b"])
+        if vp == vr:
             stats[tel]["vencedores_acertados"] += 1
 
-    # Ordena pela tripla de critérios e atribui posição
-    linhas_brutas = [
-        {"telefone": tel, **s}
-        for tel, s in stats.items()
-    ]
-    linhas_brutas.sort(
-        key=lambda x: (
-            -x["pontos"],
-            -x["placares_exatos"],
-            -x["vencedores_acertados"],
-            x["nome"].lower(),
-        )
+    # Ordena conforme critérios de desempate
+    ordenados = sorted(
+        stats.values(),
+        key=lambda s: (
+            -s["pontos"],
+            -s["placares_exatos"],
+            -s["vencedores_acertados"],
+            s["nome"].lower(),
+        ),
     )
 
-    return [
-        LinhaRanking(
-            posicao=i + 1,
-            telefone=l["telefone"],
-            nome=l["nome"],
-            pontos=l["pontos"],
-            placares_exatos=l["placares_exatos"],
-            vencedores_acertados=l["vencedores_acertados"],
-            jogos_palpitados=l["jogos_palpitados"],
-        )
-        for i, l in enumerate(linhas_brutas)
-    ]
+    # Constrói o ranking com posições
+    ranking: list[LinhaRanking] = []
+    for i, s in enumerate(ordenados, start=1):
+        ranking.append(LinhaRanking(
+            posicao=i,
+            nome=s["nome"],
+            telefone=s["telefone"],
+            pontos=s["pontos"],
+            placares_exatos=s["placares_exatos"],
+            vencedores_acertados=s["vencedores_acertados"],
+            jogos_palpitados=s["jogos_palpitados"],
+        ))
+    return ranking
