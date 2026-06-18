@@ -130,7 +130,7 @@ def _renderizar_cartola() -> None:
 def _renderizar_comuns() -> None:
     st.subheader("Prazo dos palpites")
     st.markdown(
-        "Você pode editar seus palpites até **0h (horário de Brasília) "
+        "Você pode editar seus palpites até **meio-dia (12h, horário de Brasília) "
         "do dia do jogo**. Depois disso o palpite trava."
     )
 

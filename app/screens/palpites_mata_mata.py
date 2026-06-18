@@ -242,7 +242,7 @@ def render() -> None:
         "• Digite o placar no formato **2x1**.  \n"
         "• O campo *quem avança* só pontua em caso de **empate** no seu palpite.  \n"
         "• Cada fase tem um botão **Salvar** próprio.  \n"
-        "• Palpites liberados até **0h (Brasília) do dia do jogo**."
+        "• Palpites liberados até **12h (Brasília) do dia do jogo**."
     )
 
     try:

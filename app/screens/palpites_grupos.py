@@ -257,7 +257,7 @@ def render() -> None:
         "• Digite o placar no formato **2x1** (também aceita 2-1 ou 2 1).  \n"
         "• Cada grupo tem um botão **Salvar** próprio. "
         "Lembre de clicar antes de trocar de aba.  \n"
-        "• Você pode editar os palpites até **0h (Brasília) do dia do jogo**.  \n"
+        "• Você pode editar os palpites até **12h (Brasília) do dia do jogo**.  \n"
         "• Após o jogo finalizado, sua pontuação aparece em destaque."
     )
 
