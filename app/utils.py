@@ -17,7 +17,7 @@ import streamlit as st
 # Leitura de configurações
 # -------------------------------------------------------------------
 # Ordem de prioridade:
-#   1. st.secrets (Streamlit Cloud)
+#   1. st.secrets (Streamlit Cloud / Railway)
 #   2. variáveis de ambiente / .env (rodando localmente)
 
 def ler_segredo(chave: str, default: str | None = None) -> str | None:
@@ -32,6 +32,14 @@ def ler_segredo(chave: str, default: str | None = None) -> str | None:
     return os.environ.get(chave, default)
 
 
+def bolao_id() -> str:
+    """
+    Retorna o identificador do bolão atual (ex: 'lavaprato', 'cartola').
+    Lido de BOLAO_ID nos secrets/.env. Default 'lavaprato'.
+    """
+    return (ler_segredo("BOLAO_ID") or "lavaprato").strip()
+
+
 # -------------------------------------------------------------------
 # Timezone / deadlines
 # -------------------------------------------------------------------
@@ -44,12 +52,12 @@ def _tz() -> ZoneInfo:
 
 def deadline_palpite(data_jogo: date) -> datetime:
     """
-    Deadline para palpite: meia-noite (0h) do dia do jogo, no fuso configurado.
+    Deadline para palpite: meio-dia (12h) do dia do jogo, no fuso configurado.
 
-    Exemplo: jogo em 20/06/2026 → deadline 20/06/2026 00:00:00 (horário Brasília).
-    Isso significa que os palpites são aceitos até 23:59:59 do dia anterior.
+    Exemplo: jogo em 20/06/2026 → deadline 20/06/2026 12:00:00 (horário Brasília).
+    Os palpites são aceitos até 11:59:59 do mesmo dia.
     """
-    return datetime.combine(data_jogo, time(0, 0, 0), tzinfo=_tz())
+    return datetime.combine(data_jogo, time(12, 0, 0), tzinfo=_tz())
 
 
 def palpite_permitido(data_jogo: date, agora: datetime | None = None) -> bool:
@@ -74,12 +82,3 @@ def admin_pin() -> str | None:
     """Retorna o PIN do admin, ou None se não configurado."""
     pin = (ler_segredo("ADMIN_PIN") or "").strip()
     return pin if pin else None
-
-
-def bolao_id() -> str:
-    """
-    Retorna o identificador do bolão atual (ex: 'lavaprato', 'cartola').
-    Lido de BOLAO_ID nos secrets/.env. Default 'lavaprato' para
-    compatibilidade com o primeiro bolão.
-    """
-    return (ler_segredo("BOLAO_ID") or "lavaprato").strip()
