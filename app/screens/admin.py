@@ -193,7 +193,19 @@ def _reabrir_partida(partida_id: int) -> None:
         "status": "agendado",
     }).eq("id", partida_id).execute()
     db.listar_partidas.clear()
-
+    # Invalida o snapshot daquela data (será regerado quando todos os
+    # jogos da data voltarem a ficar finalizados).
+    try:
+        from app.snapshots import deletar_snapshot_da_data, _parse_data
+        # Precisa buscar a data da partida que foi reaberta
+        res = client.table("partidas").select(
+            "data_jogo"
+        ).eq("id", partida_id).execute()
+        if res.data:
+            deletar_snapshot_da_data(_parse_data(res.data[0]["data_jogo"]))
+    except Exception as exc:
+        import logging
+        logging.warning("Falha ao limpar snapshot: %s", exc)
 
 # -------------------------------------------------------------------
 # Aba: resetar senha
