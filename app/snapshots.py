@@ -1,20 +1,12 @@
 """
 app/snapshots.py
 ================
-Snapshots históricos do ranking. Cada snapshot guarda a posição e os
-pontos de cada participante ao final de um dia que teve jogos.
+Snapshots históricos do ranking.
 
-Gatilhos:
-    - Quando o admin lança um resultado E todos os jogos da data daquela
-      partida estão finalizados, dispara `criar_snapshot_se_dia_completo`.
-    - Quando o admin reabre uma partida (limpa resultado), dispara
-      `deletar_snapshot_da_data` para invalidar o snapshot daquele dia.
-      (Ele será recriado quando todos voltarem a ficar finalizados.)
-
-Modo "histórico" do bootstrap:
-    O script `scripts/bootstrap_snapshots.py` reconstrói os snapshots
-    de dias passados simulando "quais jogos estavam finalizados ao
-    fim de cada data". Reutiliza `_calcular_ranking_para_data` daqui.
+Importante: ao calcular ranking pro snapshot, o regramento correto
+do bolão alvo é passado EXPLICITAMENTE (via `regras`), pra evitar que
+o cálculo dependa do `bolao_id()` ambiente. Crucial no bootstrap,
+que processa múltiplos bolões em sequência.
 """
 from __future__ import annotations
 
@@ -23,6 +15,7 @@ from typing import Optional
 
 from app.db import get_client
 from app.ranking import calcular_ranking
+from app.scoring_helpers import regras_para_bolao
 from app.utils import bolao_id
 
 
@@ -33,7 +26,6 @@ def _parse_data(d) -> date:
 
 
 def _todos_jogos_da_data_finalizados(data_jogo: date) -> bool:
-    """True se TODAS as partidas com aquela data estão finalizadas."""
     iso = data_jogo.isoformat()
     result = (
         get_client()
@@ -43,7 +35,7 @@ def _todos_jogos_da_data_finalizados(data_jogo: date) -> bool:
         .execute()
     )
     if not result.data:
-        return False  # nenhum jogo naquela data
+        return False
     return all(p["status"] == "finalizado" for p in result.data)
 
 
@@ -52,11 +44,8 @@ def _ranking_para_data(
     usuarios: list[dict],
     partidas: list[dict],
     palpites: list[dict],
+    regras: str,
 ) -> list:
-    """
-    Calcula o ranking considerando APENAS jogos com data_jogo <= data_corte
-    E que estejam finalizados.
-    """
     partidas_ate_data = [
         p for p in partidas
         if p["status"] == "finalizado"
@@ -64,19 +53,20 @@ def _ranking_para_data(
     ]
     ids_validos = {p["id"] for p in partidas_ate_data}
     palpites_filtrados = [p for p in palpites if p["partida_id"] in ids_validos]
-
-    return calcular_ranking(usuarios, partidas_ate_data, palpites_filtrados)
+    return calcular_ranking(
+        usuarios, partidas_ate_data, palpites_filtrados, regras=regras
+    )
 
 
 def criar_snapshot(data_snapshot: date, bid: Optional[str] = None) -> int:
     """
     Cria/sobrescreve o snapshot do bolão para a data dada.
-    Retorna o número de linhas inseridas.
+    O regramento aplicado é o do bolão alvo (não o do ambiente).
     """
     bid = bid or bolao_id()
+    regras = regras_para_bolao(bid)
     client = get_client()
 
-    # Coleta dados do bolão
     usuarios = (
         client.table("usuarios").select("*").eq("bolao_id", bid).execute().data
     )
@@ -89,10 +79,9 @@ def criar_snapshot(data_snapshot: date, bid: Optional[str] = None) -> int:
     )
 
     linhas_ranking = _ranking_para_data(
-        data_snapshot, usuarios, partidas, palpites
+        data_snapshot, usuarios, partidas, palpites, regras=regras
     )
 
-    # Apaga snapshot anterior dessa data (se existir) antes de gravar.
     client.table("ranking_snapshots").delete().eq(
         "bolao_id", bid
     ).eq("data_snapshot", data_snapshot.isoformat()).execute()
@@ -118,50 +107,19 @@ def criar_snapshot(data_snapshot: date, bid: Optional[str] = None) -> int:
 
 
 def criar_snapshot_se_dia_completo(data_jogo: date) -> Optional[int]:
-    """
-    Cria snapshot em TODOS os bolões SE todos os jogos do dia estão
-    finalizados.
-
-    Chamado depois de cada lançamento de resultado. Como resultados são
-    compartilhados entre bolões (tabela `partidas` é única), o gatilho
-    dispara o snapshot em todos os bolões existentes, garantindo histórico
-    coerente sem depender de qual app fez o lançamento.
-
-    Retorna a soma de linhas inseridas em todos os bolões, ou None se
-    o gatilho não foi atingido.
-    """
+    """Dispara snapshot em todos os bolões se o dia ficou completo."""
     if not _todos_jogos_da_data_finalizados(data_jogo):
         return None
-
     total = 0
     for bid in _listar_boloes_existentes():
         total += criar_snapshot(data_jogo, bid=bid)
     return total
 
 
-def _listar_boloes_existentes() -> list[str]:
-    """Lista os bolao_id distintos presentes na tabela usuarios."""
-    result = (
-        get_client()
-        .table("usuarios")
-        .select("bolao_id")
-        .execute()
-    )
-    return sorted({row["bolao_id"] for row in result.data})
-
-
-def deletar_snapshot_da_data(data_snapshot: date, bid: Optional[str] = None) -> int:
-    """
-    Remove o snapshot de uma data específica.
-
-    Se `bid` é None (caso padrão, quando chamado pelo gatilho do admin ao
-    reabrir uma partida): deleta em TODOS os bolões existentes, já que
-    resultados são compartilhados.
-
-    Se `bid` é fornecido (uso interno/programático): deleta só naquele bolão.
-
-    Retorna o total de linhas removidas.
-    """
+def deletar_snapshot_da_data(
+    data_snapshot: date, bid: Optional[str] = None
+) -> int:
+    """Apaga snapshot. Sem bid=None, apaga em todos os bolões."""
     client = get_client()
     iso = data_snapshot.isoformat()
 
@@ -188,8 +146,13 @@ def deletar_snapshot_da_data(data_snapshot: date, bid: Optional[str] = None) -> 
     return total
 
 
+def _listar_boloes_existentes() -> list[str]:
+    result = get_client().table("usuarios").select("bolao_id").execute()
+    return sorted({row["bolao_id"] for row in result.data})
+
+
 def listar_snapshots() -> list[dict]:
-    """Lista todos os snapshots do bolão atual (uso do gráfico)."""
+    """Lista todos os snapshots do bolão atual."""
     return (
         get_client()
         .table("ranking_snapshots")
