@@ -3,3 +3,4 @@ supabase>=2.5
 python-dotenv>=1.0
 pandas>=2.2
 pytest>=8.0
+plotly>=5.0
