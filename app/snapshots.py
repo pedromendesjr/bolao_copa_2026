@@ -119,31 +119,73 @@ def criar_snapshot(data_snapshot: date, bid: Optional[str] = None) -> int:
 
 def criar_snapshot_se_dia_completo(data_jogo: date) -> Optional[int]:
     """
-    Cria o snapshot do bolão atual SE todos os jogos do dia estão finalizados.
+    Cria snapshot em TODOS os bolões SE todos os jogos do dia estão
+    finalizados.
 
-    Chamado depois de cada lançamento de resultado. Retorna o número de
-    linhas inseridas, ou None se não atingiu o gatilho.
+    Chamado depois de cada lançamento de resultado. Como resultados são
+    compartilhados entre bolões (tabela `partidas` é única), o gatilho
+    dispara o snapshot em todos os bolões existentes, garantindo histórico
+    coerente sem depender de qual app fez o lançamento.
+
+    Retorna a soma de linhas inseridas em todos os bolões, ou None se
+    o gatilho não foi atingido.
     """
     if not _todos_jogos_da_data_finalizados(data_jogo):
         return None
-    return criar_snapshot(data_jogo)
+
+    total = 0
+    for bid in _listar_boloes_existentes():
+        total += criar_snapshot(data_jogo, bid=bid)
+    return total
+
+
+def _listar_boloes_existentes() -> list[str]:
+    """Lista os bolao_id distintos presentes na tabela usuarios."""
+    result = (
+        get_client()
+        .table("usuarios")
+        .select("bolao_id")
+        .execute()
+    )
+    return sorted({row["bolao_id"] for row in result.data})
 
 
 def deletar_snapshot_da_data(data_snapshot: date, bid: Optional[str] = None) -> int:
     """
-    Remove o snapshot de uma data específica (usado quando admin reabre
-    uma partida daquela data). Retorna o número de linhas removidas.
+    Remove o snapshot de uma data específica.
+
+    Se `bid` é None (caso padrão, quando chamado pelo gatilho do admin ao
+    reabrir uma partida): deleta em TODOS os bolões existentes, já que
+    resultados são compartilhados.
+
+    Se `bid` é fornecido (uso interno/programático): deleta só naquele bolão.
+
+    Retorna o total de linhas removidas.
     """
-    bid = bid or bolao_id()
-    result = (
-        get_client()
-        .table("ranking_snapshots")
-        .delete()
-        .eq("bolao_id", bid)
-        .eq("data_snapshot", data_snapshot.isoformat())
-        .execute()
-    )
-    return len(result.data) if result.data else 0
+    client = get_client()
+    iso = data_snapshot.isoformat()
+
+    if bid is not None:
+        result = (
+            client.table("ranking_snapshots")
+            .delete()
+            .eq("bolao_id", bid)
+            .eq("data_snapshot", iso)
+            .execute()
+        )
+        return len(result.data) if result.data else 0
+
+    total = 0
+    for b in _listar_boloes_existentes():
+        result = (
+            client.table("ranking_snapshots")
+            .delete()
+            .eq("bolao_id", b)
+            .eq("data_snapshot", iso)
+            .execute()
+        )
+        total += len(result.data) if result.data else 0
+    return total
 
 
 def listar_snapshots() -> list[dict]:
