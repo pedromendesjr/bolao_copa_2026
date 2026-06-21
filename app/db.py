@@ -164,6 +164,16 @@ def atualizar_resultado(
     )
     # Invalida o cache para refletir a mudança imediatamente
     listar_partidas.clear()
+    try:
+        from app.snapshots import (
+            criar_snapshot_se_dia_completo, _parse_data,
+        )
+        partida_atualizada = result.data[0]
+        data_jogo = _parse_data(partida_atualizada["data_jogo"])
+        criar_snapshot_se_dia_completo(data_jogo)
+    except Exception as exc:
+        import logging
+        logging.warning("Falha ao gerar snapshot: %s", exc)
     return result.data[0]
 
 
