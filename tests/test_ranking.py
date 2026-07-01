@@ -178,7 +178,7 @@ class TestBordas:
             _palpite("1", 2, 1, 1, avanca="A"),        # 18 (mata-mata)
         ]
         r = calcular_ranking(usuarios, partidas, palpites)
-        assert r[0].pontos == 36
+        assert r[0].pontos == 45
         assert r[0].placares_exatos == 2
         assert r[0].jogos_palpitados == 2
 

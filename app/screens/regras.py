@@ -29,7 +29,7 @@ def render() -> None:
 
 
 # -------------------------------------------------------------------
-# REGRAS PADRÃO (lavaprato / main)
+# REGRAS PADRÃO (lavaprato)
 # -------------------------------------------------------------------
 
 def _renderizar_padrao() -> None:
@@ -46,29 +46,36 @@ def _renderizar_padrao() -> None:
         """
     )
 
-    st.subheader("Mata-mata · palpite com VENCEDOR")
-    st.markdown(
-        """
-        Aplicam-se as mesmas regras da fase de grupos (18/15/12/3).
-        O campo "quem avança" é ignorado pois já está implícito no vencedor.
-
-        **Caso especial:** se o jogo termina empatado e vai para os pênaltis,
-        e você errou o placar mas acertou quem avançou, ganha **3 pontos**.
-        """
-    )
-
-    st.subheader("Mata-mata · palpite EMPATE")
+    st.subheader("Mata-mata · jogo termina no tempo normal (com vencedor)")
     st.markdown(
         """
         | Pontos | Critério |
         |---:|---|
-        | **18** | Placar exato + acertou quem avançou |
-        | **15** | Empate não-exato + acertou quem avançou |
-        | **12** | Placar exato + errou quem avançou |
-        | **9** | Empate não-exato + errou quem avançou |
-        | **3** | Real teve vencedor, mas você acertou quem passou |
+        | **25** | Placar exato |
+        | **20** | Acertou vencedor e número de gols de um dos times |
+        | **15** | Acertou apenas o vencedor |
+        | **3** | Palpite empate, mas acertou quem avançou |
         | **0** | Demais casos |
         """
+    )
+
+    st.subheader("Mata-mata · jogo termina empatado (decidido nos pênaltis)")
+    st.markdown(
+        """
+        | Pontos | Critério |
+        |---:|---|
+        | **27** | Empate exato + acertou quem ganhou nos pênaltis |
+        | **22** | Empate exato + errou quem ganhou nos pênaltis |
+        | **18** | Empate não-exato + acertou quem ganhou nos pênaltis |
+        | **15** | Empate não-exato + errou quem ganhou nos pênaltis |
+        | **3** | Palpite com vencedor, mas acertou quem ganhou nos pênaltis |
+        | **0** | Demais casos |
+        """
+    )
+
+    st.info(
+        "💡 No mata-mata, em caso de empate **você precisa selecionar** "
+        "quem você acha que avança nos pênaltis ao fazer o palpite."
     )
 
 
@@ -124,14 +131,14 @@ def _renderizar_cartola() -> None:
 
 
 # -------------------------------------------------------------------
-# Seção comum (vale pros dois bolões)
+# Comum aos dois bolões
 # -------------------------------------------------------------------
 
 def _renderizar_comuns() -> None:
     st.subheader("Prazo dos palpites")
     st.markdown(
-        "Você pode editar seus palpites até **meio-dia (12h, horário de Brasília) "
-        "do dia do jogo**. Depois disso o palpite trava."
+        "Você pode editar seus palpites até o **meio-dia (12h, horário de "
+        "Brasília) do dia do jogo**. Depois disso o palpite trava."
     )
 
     st.subheader("Critério de desempate no ranking")

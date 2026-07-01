@@ -1,11 +1,17 @@
 """
 db.py
 =====
-Cliente Supabase e funções de acesso ao banco. Toda I/O acontece aqui.
+Cliente Supabase e funções de acesso ao banco.
+
+Nota sobre paginação:
+    O PostgREST (usado pelo Supabase) limita cada query a 1000 linhas
+    por padrão. Passando desse limite, os resultados são cortados
+    silenciosamente. Para tabelas que crescem (palpites, principalmente),
+    usamos `_paginate` que busca em lotes até esgotar.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -14,8 +20,10 @@ from supabase import Client, create_client
 from app.utils import bolao_id, ler_segredo
 
 
-# Carrega variáveis do .env uma única vez quando o módulo é importado
 load_dotenv()
+
+
+TAMANHO_LOTE = 1000
 
 
 # -------------------------------------------------------------------
@@ -24,29 +32,58 @@ load_dotenv()
 
 @st.cache_resource
 def get_client() -> Client:
-    """
-    Retorna o cliente Supabase, criado uma única vez por sessão.
-
-    Lê credenciais com a seguinte ordem de prioridade:
-        1. st.secrets (Streamlit Cloud)
-        2. variáveis de ambiente / .env (rodando localmente)
-    """
     url = ler_segredo("SUPABASE_URL")
     key = ler_segredo("SUPABASE_KEY")
     if not url or not key:
         raise RuntimeError(
             "SUPABASE_URL e SUPABASE_KEY não configurados. "
-            "Localmente: confira seu arquivo .env. "
-            "No Streamlit Cloud: configure em Settings → Secrets."
+            "Localmente: confira seu .env. "
+            "No deploy: configure em Settings → Secrets/Variables."
         )
     return create_client(url, key)
+
+
+def _paginate(
+    fabrica_query: Callable, tamanho_lote: int = TAMANHO_LOTE
+) -> list[dict]:
+    """
+    Executa uma query em lotes, contornando o limite padrão do PostgREST.
+
+    `fabrica_query` é uma função sem argumentos que retorna um query
+    builder (com filtros já aplicados, mas SEM .range() ainda). É invocada
+    a cada iteração para gerar uma nova query — necessário porque
+    supabase-py não permite reusar o mesmo objeto múltiplas vezes.
+
+    Exemplo:
+        def todos_palpites():
+            return _paginate(
+                lambda: get_client()
+                    .table("palpites")
+                    .select("*")
+                    .eq("bolao_id", bolao_id())
+            )
+    """
+    resultados: list[dict] = []
+    offset = 0
+    while True:
+        pagina = (
+            fabrica_query()
+            .range(offset, offset + tamanho_lote - 1)
+            .execute()
+            .data
+        )
+        if not pagina:
+            break
+        resultados.extend(pagina)
+        if len(pagina) < tamanho_lote:
+            break
+        offset += tamanho_lote
+    return resultados
 
 
 # -------------------------------------------------------------------
 # Usuários
 # -------------------------------------------------------------------
-# Todas as operações de usuário são escopadas pelo bolão atual
-# (utils.bolao_id()), lido dos secrets/.env do deploy.
 
 def buscar_usuario(telefone: str) -> Optional[dict]:
     """Retorna o usuário (dict) do bolão atual, ou None se não existir."""
@@ -62,7 +99,6 @@ def buscar_usuario(telefone: str) -> Optional[dict]:
 
 
 def criar_usuario(telefone: str, nome: str, senha: str) -> dict:
-    """Cria um novo usuário no bolão atual e retorna o registro."""
     result = (
         get_client()
         .table("usuarios")
@@ -78,13 +114,11 @@ def criar_usuario(telefone: str, nome: str, senha: str) -> dict:
 
 
 def validar_senha(telefone: str, senha: str) -> bool:
-    """Confere se o telefone existe no bolão atual e a senha bate."""
     usuario = buscar_usuario(telefone)
     return usuario is not None and usuario.get("senha") == senha
 
 
 def resetar_senha(telefone: str, nova_senha: str) -> dict:
-    """Atualiza a senha de um usuário do bolão atual (tela admin)."""
     result = (
         get_client()
         .table("usuarios")
@@ -97,14 +131,12 @@ def resetar_senha(telefone: str, nova_senha: str) -> dict:
 
 
 def listar_usuarios() -> list[dict]:
-    """Lista todos os usuários do bolão atual."""
-    return (
-        get_client()
-        .table("usuarios")
-        .select("*")
-        .eq("bolao_id", bolao_id())
-        .execute()
-        .data
+    """Lista todos os usuários do bolão atual (paginado)."""
+    return _paginate(
+        lambda: get_client()
+            .table("usuarios")
+            .select("*")
+            .eq("bolao_id", bolao_id())
     )
 
 
@@ -117,17 +149,16 @@ def listar_partidas(
     fase: Optional[str] = None,
     grupo: Optional[str] = None,
 ) -> list[dict]:
-    """
-    Lista partidas com filtros opcionais. Resultados cacheados por 60s
-    para não martelar o banco a cada reload do Streamlit.
-    """
-    query = get_client().table("partidas").select("*")
-    if fase:
-        query = query.eq("fase", fase)
-    if grupo:
-        query = query.eq("grupo", grupo)
-    result = query.order("numero").execute()
-    return result.data
+    """Lista partidas com filtros opcionais. Cacheia por 60s."""
+    def fabrica():
+        q = get_client().table("partidas").select("*")
+        if fase:
+            q = q.eq("fase", fase)
+        if grupo:
+            q = q.eq("grupo", grupo)
+        return q.order("numero")
+
+    return _paginate(fabrica)
 
 
 def buscar_partida(partida_id: int) -> Optional[dict]:
@@ -147,26 +178,25 @@ def atualizar_resultado(
     placar_b: int,
     avanca: Optional[str] = None,
 ) -> dict:
-    """Lança o resultado oficial de uma partida (uso administrativo)."""
-    payload = {
-        "placar_a": placar_a,
-        "placar_b": placar_b,
-        "status": "finalizado",
-    }
-    if avanca is not None:
-        payload["avanca"] = avanca
     result = (
         get_client()
         .table("partidas")
-        .update(payload)
+        .update({
+            "placar_a": placar_a,
+            "placar_b": placar_b,
+            "avanca": avanca,
+            "status": "finalizado",
+        })
         .eq("id", partida_id)
         .execute()
     )
-    # Invalida o cache para refletir a mudança imediatamente
     listar_partidas.clear()
+
+    # Dispara snapshot se todos os jogos da data finalizaram (best-effort).
     try:
         from app.snapshots import (
-            criar_snapshot_se_dia_completo, _parse_data,
+            _parse_data,
+            criar_snapshot_se_dia_completo,
         )
         partida_atualizada = result.data[0]
         data_jogo = _parse_data(partida_atualizada["data_jogo"])
@@ -174,38 +204,34 @@ def atualizar_resultado(
     except Exception as exc:
         import logging
         logging.warning("Falha ao gerar snapshot: %s", exc)
+
     return result.data[0]
 
 
 # -------------------------------------------------------------------
 # Palpites
 # -------------------------------------------------------------------
-# Todas as operações são escopadas pelo bolão atual (utils.bolao_id()).
 
 def buscar_palpites_usuario(telefone: str) -> list[dict]:
-    """Lista todos os palpites de um usuário no bolão atual."""
-    result = (
-        get_client()
-        .table("palpites")
-        .select("*")
-        .eq("bolao_id", bolao_id())
-        .eq("telefone", telefone)
-        .execute()
+    """Palpites de um usuário no bolão atual (paginado)."""
+    return _paginate(
+        lambda: get_client()
+            .table("palpites")
+            .select("*")
+            .eq("bolao_id", bolao_id())
+            .eq("telefone", telefone)
     )
-    return result.data
 
 
 def buscar_palpites_partida(partida_id: int) -> list[dict]:
-    """Lista palpites de uma partida no bolão atual (admin/ranking)."""
-    result = (
-        get_client()
-        .table("palpites")
-        .select("*")
-        .eq("bolao_id", bolao_id())
-        .eq("partida_id", partida_id)
-        .execute()
+    """Palpites de uma partida no bolão atual (paginado)."""
+    return _paginate(
+        lambda: get_client()
+            .table("palpites")
+            .select("*")
+            .eq("bolao_id", bolao_id())
+            .eq("partida_id", partida_id)
     )
-    return result.data
 
 
 def salvar_palpite(
@@ -215,7 +241,6 @@ def salvar_palpite(
     placar_b: int,
     avanca: Optional[str] = None,
 ) -> dict:
-    """Insere ou atualiza um palpite no bolão atual (upsert pela PK composta)."""
     payload = {
         "bolao_id": bolao_id(),
         "telefone": telefone,
@@ -234,13 +259,17 @@ def salvar_palpite(
 
 
 def todos_palpites() -> list[dict]:
-    """Retorna todos os palpites do bolão atual (uso pelo ranking)."""
-    return (
-        get_client()
-        .table("palpites")
-        .select("*")
-        .eq("bolao_id", bolao_id())
-        .execute()
-        .data
+    """
+    Retorna TODOS os palpites do bolão atual (paginado).
+
+    Usado por ranking, admin (relatório do dia), e snapshots.
+    A paginação é ESSENCIAL: com ~11 participantes × 104 jogos = ~1144
+    palpites, sem paginação os últimos ~144 seriam cortados
+    silenciosamente pelo limite padrão do PostgREST.
+    """
+    return _paginate(
+        lambda: get_client()
+            .table("palpites")
+            .select("*")
+            .eq("bolao_id", bolao_id())
     )
-    
